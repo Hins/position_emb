@@ -90,11 +90,18 @@ class PositionEmbModel():
 
             weighted_sim = tf.multiply(sim_word1_word2, position_weight)
             print("weighted_sim shape is %s" % weighted_sim.get_shape())
-            prob = tf.nn.softmax((weighted_sim), axis=1, name="prob")
-            print("prob shape is %s" % prob.get_shape())
-            positive_samples = tf.slice(prob, [0,0], [-1,1])
+            self.prob = tf.nn.softmax((weighted_sim), axis=1, name="prob")
+            print("prob shape is %s" % self.prob.get_shape())
+
+            predict_result = tf.cast(tf.argmax(self.prob, axis=1), dtype=tf.int32)
+            print("predict_result shape is %s" % predict_result.get_shape())
+            comparison = tf.equal(predict_result, self.pred_label)
+            print("comparison shape is %s" % comparison.get_shape())
+            self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
+
+            positive_samples = tf.slice(self.prob, [0,0], [-1,1])
             print("positive_samples shape is %s" % positive_samples.get_shape())
-            negative_samples = tf.slice(prob, [0,1], [-1,cfg.negative_sample_size])
+            negative_samples = tf.slice(self.prob, [0,1], [-1,cfg.negative_sample_size])
             print("negative_samples shape is %s" % negative_samples.get_shape())
             self.loss = (-tf.reduce_sum(tf.log(positive_samples), axis=1) + tf.reduce_sum(tf.log(negative_samples), axis=1)) / cfg.batch_size
             print("loss shape is %s" % self.loss.get_shape())
@@ -105,6 +112,15 @@ class PositionEmbModel():
             self.word1: word1,
             self.word2: word2,
             self.position: position})
+
+    def validate(self, word1, word2, position, pred_label):
+        return self.sess.run([self.accuracy, self.prob], feed_dict={
+            self.word1: word1,
+            self.word2: word2,
+            self.position: position,
+            self.pred_label: pred_label
+        })
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 4:
@@ -126,9 +142,13 @@ if __name__ == '__main__':
         PosModelObj = PositionEmbModel(sess)
         tf.global_variables_initializer().run()
 
+        trainable = False
         for epoch_index in range(cfg.epoch_size):
             loss_sum = 0.0
             for i in range(train_set_size):
+                if trainable == True:
+                    tf.get_variable_scope().reuse_variables()
+                trainable = True
                 _, iter_loss = PosModelObj.train(np.reshape(word1_list[i * cfg.batch_size * (cfg.negative_sample_size+1):
                                                 (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]),
                                                  np.reshape(word2_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
@@ -137,4 +157,25 @@ if __name__ == '__main__':
                                                 (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]))
                 loss_sum += iter_loss
             print("epoch_index %d, loss is %f" % (epoch_index, np.sum(loss_sum) / cfg.batch_size))
+
+            accuracy = 0.0
+            for j in range(total_batch_size - train_set_size):
+                word1_validate = np.reshape(word1_list[j * cfg.batch_size * (cfg.negative_sample_size+1):
+                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
+                word2_validate = np.reshape(word2_list[j * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
+                position_validate = np.reshape(position_list[j * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
+                for i in range(word1_validate.shape[0]):
+                    pos_index = random.randint(0, cfg.negative_sample_size)
+                    tmp = word2_validate[i][0]
+                    word2_validate[i][0] = word2_validate[i][pos_index]
+                    word2_validate[i][pos_index] = tmp
+                    tmp = position_validate[i][0]
+                    position_validate[i][0] = position_validate[i][pos_index]
+                    position_validate[i][pos_index] = tmp
+                label_validate = np.argmax(np.reshape(position_validate, newshape=[cfg.batch_size, -1]), axis=1)
+                iter_accuracy, prob = PosModelObj.validate(word1_validate, word2_validate, position_validate, label_validate)
+                accuracy += iter_accuracy
+            print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
         sess.close()

@@ -14,7 +14,7 @@ if __name__ == "__main__":
         word_dict = {}
         with open(sys.argv[1], 'r') as in_file:
             for item in in_file:
-                words = item.split(",")
+                words = item.strip("\r\n").split(",")
                 for word in words:
                     if word not in word_dict:
                         word_dict[word] = len(word_dict) + 1

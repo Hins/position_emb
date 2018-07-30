@@ -14,14 +14,25 @@ import numpy as np
 word1_list = []
 word2_list = []
 position_list = []
-def load_sample(input_file):
+word_dictionary_size = 0
+def load_sample(input_file, dict_file):
+    global word1_list, word2_list, position_list, word_dictionary_size
+    word_dict = {}
+    with open(dict_file, 'r') as f:
+        for line in f:
+            line = line.strip('\r\n').split('\t')
+            word_dict[line[0]] = int(line[1])
+        f.close()
+    word_dictionary_size = len(word_dict)
+
     with open(input_file, 'r') as f:
-        for item in f:
-            elements = item.split(",")
+        for line in f:
+            elements = line.strip('\r\n').split('\t')
             word1_list.append(int(elements[0]))
             word2_list.append(int(elements[1]))
             position_list.append(int(elements[2]))
         f.close()
+
     word1_list = np.asarray(word1_list)
     word2_list = np.asarray(word2_list)
     position_list = np.asarray(position_list)
@@ -44,7 +55,7 @@ class PositionEmbModel():
                 )
                 self.position_emb_weight = tf.get_variable(
                     'position_emb',
-                    shape=(cfg.embedding_window, cfg.position_embedding_size),
+                    shape=(cfg.embedding_window + 1, cfg.position_embedding_size),
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
@@ -55,7 +66,7 @@ class PositionEmbModel():
             word2_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word2)
             print('word2_embed_init shape is %s' % word2_embed_init.get_shape())
             # [cfg.batch_size, cfg.embedding_window, cfg.position_embedding_size]
-            position_embed_init = tf.nn.embedding_lookup(self.position_emb_weight, self.position_samples)
+            position_embed_init = tf.nn.embedding_lookup(self.position_emb_weight, self.position)
             print('pos_embed_init shape is %s' % position_embed_init.get_shape())
 
             # [cfg.batch_size, cfg.negative_sample_size + 1]
@@ -78,9 +89,15 @@ class PositionEmbModel():
             print("position_weight shape is %s" % position_weight.get_shape())
 
             weighted_sim = tf.multiply(sim_word1_word2, position_weight)
-            positive_samples = tf.slice(weighted_sim, [0,0], [-1,1])
-            negative_samples = tf.slice(weighted_sim, [0,1], [-1,cfg.negative_sample_size + 1])
+            print("weighted_sim shape is %s" % weighted_sim.get_shape())
+            prob = tf.nn.softmax((weighted_sim), axis=1, name="prob")
+            print("prob shape is %s" % prob.get_shape())
+            positive_samples = tf.slice(prob, [0,0], [-1,1])
+            print("positive_samples shape is %s" % positive_samples.get_shape())
+            negative_samples = tf.slice(prob, [0,1], [-1,cfg.negative_sample_size])
+            print("negative_samples shape is %s" % negative_samples.get_shape())
             self.loss = (-tf.reduce_sum(tf.log(positive_samples), axis=1) + tf.reduce_sum(tf.log(negative_samples), axis=1)) / cfg.batch_size
+            print("loss shape is %s" % self.loss.get_shape())
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
 
     def train(self, word1, word2, position):
@@ -90,30 +107,34 @@ class PositionEmbModel():
             self.position: position})
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
-        print("position_emb <input file> <output model>")
+    if len(sys.argv) < 4:
+        print("position_emb <input file> <dict file> <output model>")
         sys.exit()
 
-    load_sample(sys.argv[1])
+    load_sample(sys.argv[1], sys.argv[2])
     if word1_list.shape[0] % (cfg.negative_sample_size + 1) != 0:
         print("samples are incorrect")
         sys.exit()
     total_sample_size = word1_list.shape[0] / (cfg.negative_sample_size + 1)
     total_batch_size = total_sample_size / cfg.batch_size
-    train_set_size = total_batch_size * cfg.train_set_ratio
+    train_set_size = int(total_batch_size * cfg.train_set_ratio)
 
-    print('sample_size is %d, train_set_size is %d' % (total_sample_size, train_set_size))
+    print('total_batch_size is %d, train_set_size is %d' % (total_batch_size, train_set_size))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
         PosModelObj = PositionEmbModel(sess)
         tf.global_variables_initializer().run()
 
-        for i in range(train_set_size):
-            _, iter_loss = PosModelObj.train(word1_list[i * cfg.batch_size * (cfg.negative_sample_size+1):
-                                                        (i + 1) * cfg.batch_size * (cfg.negative_sample_size + 1),:],
-                                             word2_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                        (i + 1) * cfg.batch_size * (cfg.negative_sample_size + 1), :],
-                                             position_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                        (i + 1) * cfg.batch_size * (cfg.negative_sample_size + 1), :])
+        for epoch_index in range(cfg.epoch_size):
+            loss_sum = 0.0
+            for i in range(train_set_size):
+                _, iter_loss = PosModelObj.train(np.reshape(word1_list[i * cfg.batch_size * (cfg.negative_sample_size+1):
+                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]),
+                                                 np.reshape(word2_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]),
+                                                 np.reshape(position_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]))
+                loss_sum += iter_loss
+            print("epoch_index %d, loss is %f" % (epoch_index, np.sum(loss_sum) / cfg.batch_size))
         sess.close()

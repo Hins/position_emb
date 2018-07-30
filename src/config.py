@@ -13,5 +13,6 @@ flags.DEFINE_integer('top_k_sim', -5, 'top k similarity items')
 flags.DEFINE_float('stddev', 0.01, 'stddev for W initializer')
 flags.DEFINE_integer('negative_sample_size', 5, 'negative sample size')
 flags.DEFINE_integer('MAX_GRAD_NORM', 5, 'maximum gradient norm')
+flags.DEFINE_integer('epoch_size', 5, 'epoch size')
 
 cfg = tf.app.flags.FLAGS

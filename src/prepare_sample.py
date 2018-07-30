@@ -10,11 +10,16 @@ if __name__ == "__main__":
         print("prepare_sample <input file> <output file>")
         sys.exit()
 
-    word_dict = {}
-    with open(sys.argv[1], 'r') as f:
-        for item in f:
-            words = item.split(",")
-            for word in words:
-                if word not in word_dict:
-                    word_dict[word] = len(word_dict) + 1
-        f.close()
+    with open(sys.argv[2], 'w') as out_file:
+        word_dict = {}
+        with open(sys.argv[1], 'r') as in_file:
+            for item in in_file:
+                words = item.split(",")
+                for word in words:
+                    if word not in word_dict:
+                        word_dict[word] = len(word_dict) + 1
+            in_file.close()
+
+        for k,v in word_dict.items():
+            out_file.write(k + "\t" + str(v) + "\n")
+        out_file.close()

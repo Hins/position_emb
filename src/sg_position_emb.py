@@ -72,12 +72,12 @@ class PositionEmbModel():
             with tf.variable_scope("position_model"):
                 proj_weight = tf.get_variable(
                     'proj_layer',
-                    shape=(word_dictionary_size, cfg.word_embedding_size),
+                    shape=(word_dictionary_size, cfg.word_embedding_size + cfg.position_embedding_size),
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
             proj_layer = tf.reshape(
-                tf.matmul(proj_weight, tf.reshape(word_embed_init, shape=[cfg.word_embedding_size, -1])),
+                tf.matmul(proj_weight, tf.reshape(word_position_emb, shape=[cfg.word_embedding_size + cfg.position_embedding_size, -1])),
                 shape=[-1, word_dictionary_size]
                 )
             print("proj_layer shape is %s" % proj_layer.get_shape())

@@ -79,7 +79,9 @@ class PositionEmbModel():
                 shape=[-1, word_dictionary_size]
                 )
             print("proj_layer shape is %s" % proj_layer.get_shape())
-            self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=proj_layer, labels=tf.one_hot(tf.reshape(self.position, shape=[-1,1]), depth=word_dictionary_size))
+            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(
+                logits=proj_layer,
+                labels=tf.one_hot(tf.reshape(self.position, shape=[-1,1]), depth=word_dictionary_size)))
             print("loss shape is %s" % self.loss.get_shape())
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
 
@@ -88,6 +90,16 @@ class PositionEmbModel():
             comparison = tf.equal(predict_result, self.pred_label)
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
+
+            self.merged = tf.summary.merge_all()
+
+            with tf.name_scope('Test'):
+                self.average_accuracy = tf.placeholder(tf.float32)
+                self.accuracy_summary = tf.summary.scalar('accuracy', self.average_accuracy)
+
+            with tf.name_scope('Train'):
+                self.average_loss = tf.placeholder(tf.float32)
+                self.loss_summary = tf.summary.scalar('average_loss', self.average_loss)
 
     def train(self, word1, word2, position):
         return self.sess.run([self.opt, self.loss], feed_dict={
@@ -102,6 +114,12 @@ class PositionEmbModel():
             self.position: position,
             self.pred_label: pred_label
         })
+
+    def get_loss_summary(self, epoch_loss):
+        return self.sess.run(self.loss_summary, feed_dict={self.average_loss: epoch_loss})
+
+    def get_accuracy_summary(self, epoch_accuracy):
+        return self.sess.run(self.accuracy_summary, feed_dict={self.average_accuracy: epoch_accuracy})
 
 if __name__ == '__main__':
     if len(sys.argv) < 4:
@@ -123,6 +141,8 @@ if __name__ == '__main__':
     with tf.Session(config=config) as sess:
         PosModelObj = PositionEmbModel(sess)
         tf.global_variables_initializer().run()
+        train_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.train_summary_writer_path, sess.graph)
+        test_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.test_summary_writer_path, sess.graph)
 
         trainable = False
         for epoch_index in range(cfg.epoch_size):
@@ -139,6 +159,8 @@ if __name__ == '__main__':
                                                 (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]))
                 loss_sum += iter_loss
             print("epoch_index %d, loss is %f" % (epoch_index, np.sum(loss_sum) / cfg.batch_size))
+            train_loss = PosModelObj.get_loss_summary(np.sum(loss_sum) / cfg.batch_size)
+            train_writer.add_summary(train_loss, epoch_index + 1)
 
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
@@ -160,4 +182,6 @@ if __name__ == '__main__':
                 iter_accuracy = PosModelObj.validate(word1_validate, word2_validate, position_validate, label_validate)
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
+            test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))
+            test_writer.add_summary(test_accuracy, epoch_index + 1)
         sess.close()

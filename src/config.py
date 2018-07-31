@@ -15,4 +15,8 @@ flags.DEFINE_integer('negative_sample_size', 5, 'negative sample size')
 flags.DEFINE_integer('MAX_GRAD_NORM', 5, 'maximum gradient norm')
 flags.DEFINE_integer('epoch_size', 5, 'epoch size')
 
+flags.DEFINE_string('summaries_dir', '../tb/multi-classification-position', 'Summaries directory')
+flags.DEFINE_string('train_summary_writer_path', '/train', 'train summary writer path')
+flags.DEFINE_string('test_summary_writer_path', '/test', 'test summary writer path')
+
 cfg = tf.app.flags.FLAGS

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-# @Time    : 2018/4/8 14:29
-# @Author  : panxiaotong
-# @Description : calculate word similarity with position information
+# @Time        : 2018/7/31 18:53
+# @Author      : panxiaotong
+# @Description : multi-classification by position labels
 
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -39,10 +39,10 @@ def load_sample(input_file, dict_file):
 
 class PositionEmbModel():
     def __init__(self, sess):
-        self.word1 = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
-        self.word2 = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
+        self.word = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
+        self.target = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
         self.position = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
-        self.pred_label = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
+        self.pred_label = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1)], dtype=tf.int32)
         self.sess = sess
 
         with tf.device('/gpu:0'):
@@ -61,66 +61,47 @@ class PositionEmbModel():
                 )
 
             # [cfg.batch_size, cfg.negative_sample_size + 1, cfg.word_embedding_size]
-            word1_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word1)
-            print('word1_embed_init shape is %s' % word1_embed_init.get_shape())
-            word2_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word2)
-            print('word2_embed_init shape is %s' % word2_embed_init.get_shape())
+            word_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word)
+            print('word1_embed_init shape is %s' % word_embed_init.get_shape())
             # [cfg.batch_size, cfg.embedding_window, cfg.position_embedding_size]
             position_embed_init = tf.nn.embedding_lookup(self.position_emb_weight, self.position)
             print('pos_embed_init shape is %s' % position_embed_init.get_shape())
 
-            # [cfg.batch_size, cfg.negative_sample_size + 1]
-            sim_word1_word2 = tf.sigmoid(tf.reshape(tf.reduce_sum(tf.multiply(
-                tf.reshape(word1_embed_init, shape=[-1, cfg.word_embedding_size]),
-                tf.reshape(word2_embed_init, shape=[-1, cfg.word_embedding_size])), axis=1), shape=[cfg.batch_size, -1]))
-            print("sim_word1_word2 shape is %s" % sim_word1_word2.get_shape())
-
             with tf.variable_scope("position_model"):
-                position_embedding_weight = tf.get_variable(
-                    'position_emb_weight',
-                    shape=[cfg.position_embedding_size, 1],
+                proj_weight = tf.get_variable(
+                    'proj_layer',
+                    shape=(word_dictionary_size, cfg.word_embedding_size),
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
-            # [cfg.batch_size, cfg.negative_sample_size + 1]
-            position_weight = tf.reshape(tf.matmul(
-                tf.reshape(position_embed_init, shape=[-1, cfg.position_embedding_size]),
-                position_embedding_weight), shape=[cfg.batch_size, -1])
-            print("position_weight shape is %s" % position_weight.get_shape())
+            proj_layer = tf.reshape(
+                tf.matmul(proj_weight, tf.reshape(word_embed_init, shape=[cfg.word_embedding_size, -1])),
+                shape=[-1, word_dictionary_size]
+                )
+            print("proj_layer shape is %s" % proj_layer.get_shape())
+            self.loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=proj_layer, labels=tf.one_hot(tf.reshape(self.position, shape=[-1,1]), depth=word_dictionary_size))
+            print("loss shape is %s" % self.loss.get_shape())
+            self.opt = tf.train.AdamOptimizer().minimize(self.loss)
 
-            weighted_sim = tf.multiply(sim_word1_word2, position_weight)
-            print("weighted_sim shape is %s" % weighted_sim.get_shape())
-            self.prob = tf.nn.softmax((weighted_sim), axis=1, name="prob")
-            print("prob shape is %s" % self.prob.get_shape())
-
-            predict_result = tf.cast(tf.argmax(self.prob, axis=1), dtype=tf.int32)
+            predict_result = tf.cast(tf.argmax(proj_layer, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
             comparison = tf.equal(predict_result, self.pred_label)
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
 
-            positive_samples = tf.slice(self.prob, [0,0], [-1,1])
-            print("positive_samples shape is %s" % positive_samples.get_shape())
-            negative_samples = tf.slice(self.prob, [0,1], [-1,cfg.negative_sample_size])
-            print("negative_samples shape is %s" % negative_samples.get_shape())
-            self.loss = (-tf.reduce_sum(tf.log(positive_samples), axis=1) + tf.reduce_sum(tf.log(negative_samples), axis=1)) / cfg.batch_size
-            print("loss shape is %s" % self.loss.get_shape())
-            self.opt = tf.train.AdamOptimizer().minimize(self.loss)
-
     def train(self, word1, word2, position):
         return self.sess.run([self.opt, self.loss], feed_dict={
-            self.word1: word1,
-            self.word2: word2,
+            self.word: word1,
+            self.target: word2,
             self.position: position})
 
     def validate(self, word1, word2, position, pred_label):
-        return self.sess.run([self.accuracy, self.prob], feed_dict={
-            self.word1: word1,
-            self.word2: word2,
+        return self.sess.run(self.accuracy, feed_dict={
+            self.word: word1,
+            self.target: word2,
             self.position: position,
             self.pred_label: pred_label
         })
-
 
 if __name__ == '__main__':
     if len(sys.argv) < 4:
@@ -135,7 +116,8 @@ if __name__ == '__main__':
     total_batch_size = total_sample_size / cfg.batch_size
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
 
-    print('total_batch_size is %d, train_set_size is %d' % (total_batch_size, train_set_size))
+    print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d' %
+          (total_batch_size, train_set_size, word_dictionary_size))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
@@ -146,7 +128,7 @@ if __name__ == '__main__':
         for epoch_index in range(cfg.epoch_size):
             loss_sum = 0.0
             for i in range(train_set_size):
-                if trainable == True:
+                if trainable is True:
                     tf.get_variable_scope().reuse_variables()
                 trainable = True
                 _, iter_loss = PosModelObj.train(np.reshape(word1_list[i * cfg.batch_size * (cfg.negative_sample_size+1):
@@ -174,8 +156,8 @@ if __name__ == '__main__':
                     tmp = position_validate[i][0]
                     position_validate[i][0] = position_validate[i][pos_index]
                     position_validate[i][pos_index] = tmp
-                label_validate = np.argmax(np.reshape(position_validate, newshape=[cfg.batch_size, -1]), axis=1)
-                iter_accuracy, prob = PosModelObj.validate(word1_validate, word2_validate, position_validate, label_validate)
+                label_validate = np.reshape(position_validate, newshape=[-1])
+                iter_accuracy = PosModelObj.validate(word1_validate, word2_validate, position_validate, label_validate)
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
         sess.close()

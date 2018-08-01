@@ -14,8 +14,9 @@ import numpy as np
 word1_list = []
 word2_list = []
 position_list = []
+related_dict = {}
 word_dictionary_size = 0
-def load_sample(input_file, dict_file):
+def load_sample(input_file, dict_file, related_file):
     global word1_list, word2_list, position_list, word_dictionary_size
     word_dict = {}
     with open(dict_file, 'r') as f:
@@ -28,21 +29,31 @@ def load_sample(input_file, dict_file):
     with open(input_file, 'r') as f:
         for line in f:
             elements = line.strip('\r\n').split('\t')
-            word1_list.append(int(elements[0]))
-            word2_list.append(int(elements[1]))
-            position_list.append(int(elements[2]))
+            if elements[2] != "0":    # just user positive samples
+                word1_list.append(int(elements[0]))
+                word2_list.append(int(elements[1]))
+                position_list.append(int(elements[2]))
         f.close()
 
+    with open(related_file, 'r') as f:
+        for line in f:
+            elements = line.strip('\r\n').split(':')
+            key = int(elements[0])
+            related_dict[key] = {}
+            value_list = [int(item) for item in elements[1].split(',') if item is not ""]
+            for item in value_list:
+                related_dict[key][item] = 1
+        f.close()
     word1_list = np.asarray(word1_list)
     word2_list = np.asarray(word2_list)
     position_list = np.asarray(position_list)
 
 class PositionEmbModel():
     def __init__(self, sess, output_file):
-        self.word = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
-        self.target = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
-        self.position = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
-        self.pred_label = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1)], dtype=tf.int32)
+        self.word = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
+        self.target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
+        self.position = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
+        self.pred_label = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size], dtype=tf.int32)
         self.sess = sess
         self.output_file = output_file
 
@@ -61,13 +72,13 @@ class PositionEmbModel():
                     dtype='float32'
                 )
 
-            # [cfg.batch_size, cfg.negative_sample_size + 1, cfg.word_embedding_size]
+            # [cfg.batch_size, 1, cfg.word_embedding_size]
             word_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word)
-            print('word1_embed_init shape is %s' % word_embed_init.get_shape())
-            # [cfg.batch_size, cfg.negative_sample_size + 1, cfg.position_embedding_size]
+            print('word_embed_init shape is %s' % word_embed_init.get_shape())
+            # [cfg.batch_size, 1, cfg.position_embedding_size]
             position_embed_init = tf.nn.embedding_lookup(self.position_emb_weight, self.position)
             print('pos_embed_init shape is %s' % position_embed_init.get_shape())
-            word_position_emb = tf.concat([word_embed_init, position_embed_init], axis=2)
+            word_position_emb = tf.concat([word_embed_init, position_embed_init], axis=1)
             print("word_position_emb shape is %s" % word_position_emb.get_shape())
 
             with tf.variable_scope("position_model"):
@@ -77,33 +88,36 @@ class PositionEmbModel():
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
+                print("proj_weight shape is %s" % proj_weight.get_shape())
                 proj_bias = tf.get_variable(
                     'proj_bias',
                     shape=(word_dictionary_size),
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
-            proj_layer = tf.reshape(
+                print("proj_bias shape is %s" % proj_bias.get_shape())
+            proj_layer = tf.nn.bias_add(tf.reshape(
                 tf.matmul(proj_weight, tf.reshape(word_position_emb, shape=[cfg.word_embedding_size + cfg.position_embedding_size, -1])),
                 shape=[-1, word_dictionary_size]
-                )
+                ), proj_bias)
+            # [cfg.batch_size, word_dictionary_size]
             print("proj_layer shape is %s" % proj_layer.get_shape())
 
             self.loss = tf.reduce_mean(
-                tf.nn.nce_loss(weights=proj_weight, biases=proj_bias, labels=self.target, inputs=word_position_emb,
+                tf.nn.nce_loss(weights=proj_weight, biases=proj_bias, labels=tf.reshape(self.target, shape=[-1,1]), inputs=word_position_emb,
                                num_sampled=cfg.negative_sample_size, num_classes=word_dictionary_size))
-            '''
-            self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(
-                logits=proj_layer,
-                labels=tf.one_hot(tf.reshape(self.position, shape=[-1,1]), depth=word_dictionary_size)))
-            print("loss shape is %s" % self.loss.get_shape())
-            '''
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
             self.model = tf.train.Saver()
 
-            predict_result = tf.cast(tf.argmax(proj_layer, axis=1), dtype=tf.int32)
+            softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[-1])
+            print("softmax_layer shape is %s" % softmax_layer.get_shape())
+            index_tensor = tf.reshape(tf.concat([tf.reshape(self.target, shape=[-1, 1]), self.pred_label], axis=1), shape=[-1])
+            print("index_tensor shape is %s" % index_tensor.get_shape())
+            index_score = tf.reshape(tf.nn.embedding_lookup(softmax_layer, index_tensor), shape=[cfg.batch_size, -1])
+            print("index_score shape is %s" % index_score.get_shape())
+            predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
-            comparison = tf.equal(predict_result, self.pred_label)
+            comparison = tf.equal(predict_result, np.ones(cfg.batch_size))
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
 
@@ -141,24 +155,31 @@ class PositionEmbModel():
         self.model.save(sess, self.output_file)
 
 if __name__ == '__main__':
-    if len(sys.argv) < 4:
-        print("position_emb <input file> <dict file> <output model>")
+    if len(sys.argv) < 5:
+        print("position_emb <input file> <dict file> <related file> <output model>")
         sys.exit()
 
-    load_sample(sys.argv[1], sys.argv[2])
-    if word1_list.shape[0] % (cfg.negative_sample_size + 1) != 0:
-        print("samples are incorrect")
-        sys.exit()
-    total_sample_size = word1_list.shape[0] / (cfg.negative_sample_size + 1)
+    load_sample(sys.argv[1], sys.argv[2], sys.argv[3])
+    total_sample_size = word1_list.shape[0]
     total_batch_size = total_sample_size / cfg.batch_size
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
+    train_set_size_fake = int(total_batch_size * 1)
+
+    labels = np.zeros(shape=[word1_list.shape[0], cfg.negative_sample_size])
+    for index, word in enumerate(word1_list):
+        accu = 0
+        while accu < cfg.negative_sample_size:
+            r = random.randint(1, word_dictionary_size)
+            if r not in related_dict[word]:
+                labels[index][accu] = r
+                accu += 1
 
     print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d' %
           (total_batch_size, train_set_size, word_dictionary_size))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
-        PosModelObj = PositionEmbModel(sess, sys.argv[3])
+        PosModelObj = PositionEmbModel(sess, sys.argv[4])
         tf.global_variables_initializer().run()
         train_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.train_summary_writer_path, sess.graph)
         test_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.test_summary_writer_path, sess.graph)
@@ -166,16 +187,13 @@ if __name__ == '__main__':
         trainable = False
         for epoch_index in range(cfg.epoch_size):
             loss_sum = 0.0
-            for i in range(train_set_size):
+            for i in range(train_set_size_fake):
                 if trainable is True:
                     tf.get_variable_scope().reuse_variables()
                 trainable = True
-                _, iter_loss = PosModelObj.train(np.reshape(word1_list[i * cfg.batch_size * (cfg.negative_sample_size+1):
-                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]),
-                                                 np.reshape(word2_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]),
-                                                 np.reshape(position_list[i * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                (i+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1]))
+                _, iter_loss = PosModelObj.train(word1_list[i * cfg.batch_size:(i+1) * cfg.batch_size],
+                                                 word2_list[i * cfg.batch_size:(i+1) * cfg.batch_size],
+                                                 position_list[i * cfg.batch_size:(i+1) * cfg.batch_size])
                 loss_sum += iter_loss
             print("epoch_index %d, loss is %f" % (epoch_index, np.sum(loss_sum) / cfg.batch_size))
             train_loss = PosModelObj.get_loss_summary(np.sum(loss_sum) / cfg.batch_size)
@@ -183,22 +201,10 @@ if __name__ == '__main__':
 
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
-                word1_validate = np.reshape(word1_list[j * cfg.batch_size * (cfg.negative_sample_size+1):
-                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
-                word2_validate = np.reshape(word2_list[j * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
-                position_validate = np.reshape(position_list[j * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                        (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)], newshape=[cfg.batch_size, -1])
-                for i in range(word1_validate.shape[0]):
-                    pos_index = random.randint(0, cfg.negative_sample_size)
-                    tmp = word2_validate[i][0]
-                    word2_validate[i][0] = word2_validate[i][pos_index]
-                    word2_validate[i][pos_index] = tmp
-                    tmp = position_validate[i][0]
-                    position_validate[i][0] = position_validate[i][pos_index]
-                    position_validate[i][pos_index] = tmp
-                label_validate = np.reshape(position_validate, newshape=[-1])
-                iter_accuracy = PosModelObj.validate(word1_validate, word2_validate, position_validate, label_validate)
+                iter_accuracy = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
+                                                     word2_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
+                                                     position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
+                                                     labels[j * cfg.batch_size:(j+1) * cfg.batch_size])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

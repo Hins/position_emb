@@ -13,8 +13,8 @@ if __name__ == "__main__":
     <dict file>: <word>\t<index>
     <output file>: <word>\t<pos/neg word>\t<position>
     '''
-    if len(sys.argv) < 4:
-        print("load_sample <input file> <dict file> <output file>")
+    if len(sys.argv) < 5:
+        print("load_sample <input file> <dict file> <related word list file> <output file>")
         sys.exit()
 
     word_dict = {}
@@ -30,7 +30,9 @@ if __name__ == "__main__":
     word1_list = []
     word2_list = []
     position_list = []
-    with open(sys.argv[3], 'w') as w_f:
+    related_dict = {}
+    related_word_out_file = open(sys.argv[3], 'w')
+    with open(sys.argv[4], 'w') as w_f:
         with open(sys.argv[1], 'r') as f:
             for item in f:
                 elements = item.strip('\r\n').split(",")
@@ -38,9 +40,12 @@ if __name__ == "__main__":
                 for index, word in enumerate(elements):
                     if word not in word_dict:
                         continue
+                    if word_dict[word] not in related_dict:
+                        related_dict[word_dict[word]] = {}
                     if index > 1 and elements[index - 2] in word_dict:
                         word1_list.append(word_dict[word])
                         word2_list.append(word_dict[elements[index - 2]])
+                        related_dict[word_dict[word]][word_dict[elements[index - 2]]] = 1
                         position_list.append(1)
                         accu = 0
                         while accu < cfg.negative_sample_size:
@@ -54,6 +59,7 @@ if __name__ == "__main__":
                     if index > 0 and elements[index - 1] in word_dict:
                         word1_list.append(word_dict[word])
                         word2_list.append(word_dict[elements[index - 1]])
+                        related_dict[word_dict[word]][word_dict[elements[index - 1]]] = 1
                         position_list.append(2)
                         accu = 0
                         while accu < cfg.negative_sample_size:
@@ -67,6 +73,7 @@ if __name__ == "__main__":
                     if index + 1 < word_len:
                         word1_list.append(word_dict[word])
                         word2_list.append(word_dict[elements[index + 1]])
+                        related_dict[word_dict[word]][word_dict[elements[index + 1]]] = 1
                         position_list.append(3)
                         accu = 0
                         while accu < cfg.negative_sample_size:
@@ -80,6 +87,7 @@ if __name__ == "__main__":
                     if index + 2 < word_len:
                         word1_list.append(word_dict[word])
                         word2_list.append(word_dict[elements[index + 2]])
+                        related_dict[word_dict[word]][word_dict[elements[index + 2]]] = 1
                         position_list.append(4)
                         accu = 0
                         while accu < cfg.negative_sample_size:
@@ -94,3 +102,9 @@ if __name__ == "__main__":
         for index, word in enumerate(word1_list):
             w_f.write(str(word) + "\t" + str(word2_list[index]) + "\t" + str(position_list[index]) + "\n")
         w_f.close()
+    for k,v in related_dict.items():
+        related_list = []
+        for subk, subv in v.items():
+            related_list.append(subk)
+        related_word_out_file.write(str(k) + ":" + ",".join([str(item) for item in related_list]) + "\n")
+    related_word_out_file.close()

@@ -38,12 +38,13 @@ def load_sample(input_file, dict_file):
     position_list = np.asarray(position_list)
 
 class PositionEmbModel():
-    def __init__(self, sess):
+    def __init__(self, sess, output_file):
         self.word = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
         self.target = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
         self.position = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
         self.pred_label = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1)], dtype=tf.int32)
         self.sess = sess
+        self.output_file = output_file
 
         with tf.device('/gpu:0'):
             with tf.variable_scope("position_model"):
@@ -86,6 +87,7 @@ class PositionEmbModel():
                 labels=tf.one_hot(tf.reshape(self.target, shape=[-1,1]), depth=word_dictionary_size)))
             print("loss shape is %s" % self.loss.get_shape())
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
+            self.model = tf.train.Saver()
 
             predict_result = tf.cast(tf.argmax(proj_layer, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
@@ -123,6 +125,9 @@ class PositionEmbModel():
     def get_accuracy_summary(self, epoch_accuracy):
         return self.sess.run(self.accuracy_summary, feed_dict={self.average_accuracy: epoch_accuracy})
 
+    def save(self):
+        self.model.save(sess, self.output_file)
+
 if __name__ == '__main__':
     if len(sys.argv) < 4:
         print("position_emb <input file> <dict file> <output model>")
@@ -141,7 +146,7 @@ if __name__ == '__main__':
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
-        PosModelObj = PositionEmbModel(sess)
+        PosModelObj = PositionEmbModel(sess, sys.argv[3])
         tf.global_variables_initializer().run()
         train_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.train_summary_writer_path, sess.graph)
         test_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.test_summary_writer_path, sess.graph)
@@ -186,4 +191,5 @@ if __name__ == '__main__':
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))
             test_writer.add_summary(test_accuracy, epoch_index + 1)
+        PosModelObj.save()
         sess.close()

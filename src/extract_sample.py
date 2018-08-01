@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 # @Time        : 2018/7/30 14:47
 # @Author      : panxiaotong
-# @Description : 预加载训练样本
+# @Description : extract training samples from text and dictionary
 
 import random
 import sys
 from config import cfg
 
 if __name__ == "__main__":
+    '''
+    <input file>: <word_1>,<word_2> \cdots <word_n>
+    <dict file>: <word>\t<index>
+    <output file>: <word>\t<pos/neg word>\t<position>
+    '''
     if len(sys.argv) < 4:
         print("load_sample <input file> <dict file> <output file>")
         sys.exit()

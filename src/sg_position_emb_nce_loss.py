@@ -76,15 +76,27 @@ class PositionEmbModel():
                     initializer=tf.random_normal_initializer(stddev=cfg.stddev),
                     dtype='float32'
                 )
+                proj_bias = tf.get_variable(
+                    'proj_bias',
+                    shape=(word_dictionary_size),
+                    initializer=tf.random_normal_initializer(stddev=cfg.stddev),
+                    dtype='float32'
+                )
             proj_layer = tf.reshape(
                 tf.matmul(proj_weight, tf.reshape(word_position_emb, shape=[cfg.word_embedding_size + cfg.position_embedding_size, -1])),
                 shape=[-1, word_dictionary_size]
                 )
             print("proj_layer shape is %s" % proj_layer.get_shape())
+
+            self.loss = tf.reduce_mean(
+                tf.nn.nce_loss(weights=proj_weight, biases=proj_bias, labels=self.target, inputs=word_position_emb,
+                               num_sampled=cfg.negative_sample_size, num_classes=word_dictionary_size))
+            '''
             self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(
                 logits=proj_layer,
-                labels=tf.one_hot(tf.reshape(self.target, shape=[-1,1]), depth=word_dictionary_size)))
+                labels=tf.one_hot(tf.reshape(self.position, shape=[-1,1]), depth=word_dictionary_size)))
             print("loss shape is %s" % self.loss.get_shape())
+            '''
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
 
             predict_result = tf.cast(tf.argmax(proj_layer, axis=1), dtype=tf.int32)

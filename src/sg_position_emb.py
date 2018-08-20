@@ -7,8 +7,9 @@ import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import random
 import sys
+sys.path.append("..")
 import tensorflow as tf
-from config import cfg
+from util.config import cfg
 import numpy as np
 
 word1_list = []

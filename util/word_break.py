@@ -23,6 +23,6 @@ if __name__ == "__main__":
             for line in in_f:
                 seg_list = jieba.cut(line.strip('\r\n'), cut_all=False)
                 seg_list = [item for item in seg_list if item.encode('utf-8') not in stopword_dict and item.strip() != ""]
-                out_f.write(",".join(seg_list) + "\n")
+                out_f.write(",".join(seg_list).encode('utf-8') + "\n")
             in_f.close()
         out_f.close()

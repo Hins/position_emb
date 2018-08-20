@@ -6,6 +6,9 @@
 import sys
 
 if __name__ == "__main__":
+    '''
+    <input file>: schema is <sentence1>\001<sentence2>\t<label>
+    '''
     if len(sys.argv) < 3:
         print("dedup_text <input file> <output file>")
         sys.exit()

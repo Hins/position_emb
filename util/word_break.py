@@ -21,7 +21,7 @@ if __name__ == "__main__":
     with open(sys.argv[4], 'w') as out_f:
         with open(sys.argv[1], 'r') as in_f:
             for line in in_f:
-                seg_list = jieba.cut(line.strip('\r\n'), cut_all=False)
+                seg_list = jieba.cut(line.strip('\r\n').lower(), cut_all=False)
                 seg_list = [item for item in seg_list if item.encode('utf-8') not in stopword_dict and item.strip() != ""]
                 out_f.write(",".join(seg_list).encode('utf-8') + "\n")
             in_f.close()

@@ -21,7 +21,7 @@ if __name__ == "__main__":
 
     float_digit_pattern = re.compile(r"-?([1-9]\d*\.\d*|0\.\d*[1-9]\d*|0?\.0+|0)$")
     integ_digit_pattern = re.compile(r"-?[1-9]\d*")
-    #english_char_pattern = re.compile(r"[0-9a-zA-Z.]+")
+    english_char_pattern = re.compile(r"[0-9a-zA-Z.]+")
 
     with open(sys.argv[5], 'w') as out_f:
         with open(sys.argv[1], 'r') as in_f:
@@ -30,12 +30,20 @@ if __name__ == "__main__":
                     seg_list = jieba.cut(line.strip('\r\n').lower(), cut_all=False)
                     seg_list = [item for item in seg_list if item.encode('utf-8') not in stopword_dict and item.strip() != "" and
                                 float_digit_pattern.match(item.encode("utf-8")) == None and
-                                integ_digit_pattern.match(item.encode("utf-8")) == None]
-                                #and english_char_pattern.match(item.encode("utf-8")) == None]
+                                integ_digit_pattern.match(item.encode("utf-8")) == None and
+                                english_char_pattern.match(item.encode("utf-8")) == None]
                     out_f.write(",".join(seg_list).encode('utf-8') + "\n")
                 elif sys.argv[4].lower() == "english":
-                    elements = [item for item in line.split(" ") if item.strip() != " " and
+                    elements = [item for item in line.split(" ") if item.strip('\r\n') != "" and
+                                item.strip('') != "" and
                                 item not in stopword_dict]
-                    out_f.write(",".join(elements) + "\n")
+                    new_elements = []
+                    for element in elements:
+                        element_bak = element
+                        for stopword,v in stopword_dict.items():
+                            if stopword in element:
+                                element_bak = element_bak.replace(stopword, '')
+                        new_elements.append(element_bak)
+                    out_f.write(",".join(new_elements) + "\n")
             in_f.close()
         out_f.close()

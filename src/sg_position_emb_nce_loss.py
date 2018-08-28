@@ -54,7 +54,7 @@ class PositionEmbModel():
         self.word = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.position = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
-        self.neg_label = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size], dtype=tf.int32)
+        self.validation_indices = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1), 2], dtype=tf.int32)
         self.sess = sess
         self.output_file = output_file
 
@@ -112,14 +112,9 @@ class PositionEmbModel():
             print("proj_layer shape is %s" % proj_layer.get_shape())
 
             # combine positive sample(target) with negative samples(neg_label)
-            index_tensor = tf.reshape(tf.concat([tf.reshape(self.target, shape=[-1, 1]), self.neg_label], axis=1),
-                                      shape=[cfg.batch_size,-1])
-            print("index_tensor shape is %s" % index_tensor.get_shape())
-            shape = tf.shape(index_tensor)
-            R, C = tf.meshgrid(tf.range(shape[0]), tf.range(shape[1]), indexing='ij')
             softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[cfg.batch_size,-1])
             print("softmax_layer shape is %s" % softmax_layer.get_shape())
-            index_score = tf.gather_nd(softmax_layer, index_tensor)
+            index_score = tf.gather_nd(softmax_layer, self.validation_indices)
             #index_score = tf.reshape(tf.nn.embedding_lookup(softmax_layer, index_tensor), shape=[cfg.batch_size, -1])
             print("index_score shape is %s" % index_score.get_shape())
             predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
@@ -144,12 +139,12 @@ class PositionEmbModel():
             self.target: word2,
             self.position: position})
 
-    def validate(self, word1, word2, position, neg_label):
+    def validate(self, word1, word2, position, validation_indices):
         return self.sess.run(self.accuracy, feed_dict={
             self.word: word1,
             self.target: word2,
             self.position: position,
-            self.neg_label: neg_label
+            self.validation_indices: validation_indices
         })
 
     def get_loss_summary(self, epoch_loss):
@@ -172,13 +167,19 @@ if __name__ == '__main__':
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
     train_set_size_fake = int(total_batch_size * 1)
 
-    labels = np.zeros(shape=[word1_list.shape[0], cfg.negative_sample_size])
+    labels = np.zeros(shape=[word1_list.shape[0] * (cfg.negative_sample_size + 1), 2])
+    outer_accu = 0
     for index, word in enumerate(word1_list):
-        accu = 0
+        labels[outer_accu][0] = index
+        labels[outer_accu][1] = word1_list[index]
+        outer_accu += 1
+        accu = 1
         while accu < cfg.negative_sample_size:
             r = random.randint(1, word_dictionary_size)
             if r not in related_dict[word]:
-                labels[index][accu] = r
+                labels[outer_accu][0] = index
+                labels[outer_accu][1] = r
+                outer_accu += 1
                 accu += 1
 
     print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d' %

@@ -114,8 +114,7 @@ class PositionEmbModel():
             # combine positive sample(target) with negative samples(neg_label)
             softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[cfg.batch_size,-1])
             print("softmax_layer shape is %s" % softmax_layer.get_shape())
-            index_score = tf.gather_nd(softmax_layer, self.validation_indices)
-            #index_score = tf.reshape(tf.nn.embedding_lookup(softmax_layer, index_tensor), shape=[cfg.batch_size, -1])
+            index_score = tf.reshape(tf.gather_nd(softmax_layer, self.validation_indices), shape=[cfg.batch_size, -1])
             print("index_score shape is %s" % index_score.get_shape())
             predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
@@ -212,7 +211,8 @@ if __name__ == '__main__':
                 iter_accuracy = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      word2_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     labels[j * cfg.batch_size:(j+1) * cfg.batch_size])
+                                                     labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                                            (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

@@ -17,7 +17,6 @@ word2_list = []
 position_list = []
 related_dict = {}
 word_dictionary_size = 0
-#sub_new_labels = np.zeros(shape=[cfg.batch_size * (cfg.negative_sample_size + 1), 2], dtype=np.int32)
 def load_sample(input_file, dict_file, related_file):
     global word1_list, word2_list, position_list, word_dictionary_size
     word_dict = {}
@@ -113,7 +112,7 @@ class PositionEmbModel():
             # [cfg.batch_size, word_dictionary_size]
             print("proj_layer shape is %s" % proj_layer.get_shape())
 
-            # combine positive sample(target) with negative samples(neg_label)
+            # validation:
             softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[cfg.batch_size,-1])
             print("softmax_layer shape is %s" % softmax_layer.get_shape())
             softmax_layer_list = tf.split(softmax_layer, cfg.batch_size)
@@ -126,7 +125,6 @@ class PositionEmbModel():
             print("index_score shape is %s" % self.index_score.get_shape())
             predict_result = tf.cast(tf.argmax(self.index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
-            # comparison = tf.equal(predict_result, np.zeros(cfg.batch_size))
             comparison = tf.equal(predict_result, self.validation_target)
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
@@ -175,8 +173,8 @@ if __name__ == '__main__':
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
     train_set_size_fake = int(total_batch_size * 1)
 
-    new_target = np.zeros(shape=[word2_list.shape[0]])
-    new_labels = np.zeros(shape=[word2_list.shape[0], cfg.negative_sample_size + 1])
+    targets = np.zeros(shape=[word2_list.shape[0]])
+    labels = np.zeros(shape=[word2_list.shape[0], cfg.negative_sample_size + 1])
     outer_accu = 0
     for index, word in enumerate(word2_list):
         sub_labels = np.zeros(shape=[cfg.negative_sample_size + 1])
@@ -189,22 +187,22 @@ if __name__ == '__main__':
                 sub_labels[iter] = r
                 iter += 1
         np.random.shuffle(sub_labels)    # shuffle positive and negative samples
-        new_labels[index] = sub_labels
+        labels[index] = sub_labels
         for sub_index, elem in enumerate(sub_labels):
             if elem == word2_list[index]:
-                new_target[index] = sub_index
+                targets[index] = sub_index
                 break
 
     print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d, new_labels size is %d,'
           'word1_list size is %d, new_target size is %d' %
-          (total_batch_size, train_set_size, word_dictionary_size, new_labels.shape[0], word1_list.shape[0], new_target.shape[0]))
+          (total_batch_size, train_set_size, word_dictionary_size, labels.shape[0], word1_list.shape[0], targets.shape[0]))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
         PosModelObj = PositionEmbModel(sess, sys.argv[4])
         tf.global_variables_initializer().run()
-        train_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.train_summary_writer_path, sess.graph)
-        test_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.test_summary_writer_path, sess.graph)
+        train_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.position_train_summary_writer_path, sess.graph)
+        test_writer = tf.summary.FileWriter(cfg.summaries_dir + cfg.position_test_summary_writer_path, sess.graph)
 
         trainable = False
         for epoch_index in range(cfg.epoch_size):
@@ -226,8 +224,8 @@ if __name__ == '__main__':
                 j += train_set_size
                 iter_accuracy, index_score = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     new_labels[j * cfg.batch_size:(j + 1) * cfg.batch_size],
-                                                     new_target[j * cfg.batch_size:(j+1) * cfg.batch_size])
+                                                     labels[j * cfg.batch_size:(j + 1) * cfg.batch_size],
+                                                     targets[j * cfg.batch_size:(j+1) * cfg.batch_size])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

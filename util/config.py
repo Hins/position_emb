@@ -16,7 +16,9 @@ flags.DEFINE_integer('MAX_GRAD_NORM', 5, 'maximum gradient norm')
 flags.DEFINE_integer('epoch_size', 10, 'epoch size')
 
 flags.DEFINE_string('summaries_dir', '../tb/multi-classification-position', 'Summaries directory')
-flags.DEFINE_string('train_summary_writer_path', '/train', 'train summary writer path')
-flags.DEFINE_string('test_summary_writer_path', '/test', 'test summary writer path')
+flags.DEFINE_string('position_train_summary_writer_path', '/position_train', 'position train summary writer path')
+flags.DEFINE_string('position_test_summary_writer_path', '/position_test', 'position test summary writer path')
+flags.DEFINE_string('sg_train_summary_writer_path', '/sg_train', 'skip-gram train summary writer path')
+flags.DEFINE_string('sg_test_summary_writer_path', '/sg_test', 'skip-gram test summary writer path')
 
 cfg = tf.app.flags.FLAGS

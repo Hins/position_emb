@@ -55,6 +55,7 @@ class PositionEmbModel():
         self.target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.position = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.validation_indices = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1), 2], dtype=tf.int32)
+        self.validation_target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.sess = sess
         self.output_file = output_file
 
@@ -118,7 +119,8 @@ class PositionEmbModel():
             print("index_score shape is %s" % index_score.get_shape())
             predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
-            comparison = tf.equal(predict_result, np.ones(cfg.batch_size))
+            # comparison = tf.equal(predict_result, np.zeros(cfg.batch_size))
+            comparison = tf.equal(predict_result, self.validation_target)
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
 
@@ -138,12 +140,13 @@ class PositionEmbModel():
             self.target: word2,
             self.position: position})
 
-    def validate(self, word1, word2, position, validation_indices):
-        return self.sess.run(self.accuracy, feed_dict={
+    def validate(self, word1, word2, position, validation_indices, validation_target):
+        return self.sess.run([self.accuracy, self.total_max], feed_dict={
             self.word: word1,
             self.target: word2,
             self.position: position,
-            self.validation_indices: validation_indices
+            self.validation_indices: validation_indices,
+            self.validation_target: validation_target
         })
 
     def get_loss_summary(self, epoch_loss):
@@ -166,6 +169,7 @@ if __name__ == '__main__':
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
     train_set_size_fake = int(total_batch_size * 1)
 
+    '''
     labels = np.zeros(shape=[word1_list.shape[0] * (cfg.negative_sample_size + 1), 2])
     outer_accu = 0
     for index, word in enumerate(word1_list):
@@ -180,9 +184,32 @@ if __name__ == '__main__':
                 labels[outer_accu][1] = r
                 outer_accu += 1
                 accu += 1
+    '''
 
-    print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d' %
-          (total_batch_size, train_set_size, word_dictionary_size))
+    new_target = np.zeros(shape=[word1_list.shape[0]])
+    new_labels = np.zeros(shape=[word1_list.shape[0] * (cfg.negative_sample_size + 1), 2])
+    outer_accu = 0
+    for index, word in enumerate(word1_list):
+        sub_labels = np.zeros(shape=[cfg.negative_sample_size + 1])
+        iter = 0
+        sub_labels[iter] = word1_list[index]
+        iter += 1
+        while iter < cfg.negative_sample_size:
+            r = random.randint(1, word_dictionary_size)
+            if r not in related_dict[word]:
+                sub_labels[iter] = r
+                iter += 1
+        np.random.shuffle(sub_labels)
+        for sub_index, elem in enumerate(sub_labels):
+            new_labels[outer_accu][0] = index
+            new_labels[outer_accu][1] = elem
+            outer_accu += 1
+            if elem == word1_list[index]:
+                new_target[index] = sub_index
+
+    print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d, new_labels size is %d,'
+          'word1_list size is %d, new_target size is %d' %
+          (total_batch_size, train_set_size, word_dictionary_size, new_labels.shape[0], word1_list.shape[0], new_target.shape[0]))
 
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Session(config=config) as sess:
@@ -194,7 +221,7 @@ if __name__ == '__main__':
         trainable = False
         for epoch_index in range(cfg.epoch_size):
             loss_sum = 0.0
-            for i in range(train_set_size_fake):
+            for i in range(train_set_size):
                 if trainable is True:
                     tf.get_variable_scope().reuse_variables()
                 trainable = True
@@ -208,11 +235,12 @@ if __name__ == '__main__':
 
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
-                iter_accuracy = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
+                iter_accuracy, total_max = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      word2_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                            (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)])
+                                                     new_labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                                            (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)],
+                                                     new_target[j * cfg.batch_size:(j+1) * cfg.batch_size])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

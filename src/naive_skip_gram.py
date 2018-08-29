@@ -50,7 +50,8 @@ class SkipGramModel():
     def __init__(self, sess, output_file):
         self.word = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
-        self.pred_label = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size], dtype=tf.int32)
+        self.validation_indices = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1), 2],
+                                                 dtype=tf.int32)
         self.sess = sess
         self.output_file = output_file
 
@@ -82,28 +83,26 @@ class SkipGramModel():
                     dtype='float32'
                 )
                 print("proj_bias shape is %s" % proj_bias.get_shape())
-            proj_layer = tf.nn.bias_add(tf.reshape(
-                tf.matmul(proj_weight, tf.reshape(word_embed_init, shape=[cfg.word_embedding_size, -1])),
-                shape=[-1, word_dictionary_size]
-                ), proj_bias)
-            # [cfg.batch_size, word_dictionary_size]
-            print("proj_layer shape is %s" % proj_layer.get_shape())
-
             self.loss = tf.reduce_mean(
                 tf.nn.nce_loss(weights=proj_weight, biases=proj_bias, labels=tf.reshape(self.target, shape=[-1,1]), inputs=word_embed_init,
                                num_sampled=cfg.negative_sample_size, num_classes=word_dictionary_size))
             self.opt = tf.train.AdamOptimizer().minimize(self.loss)
             self.model = tf.train.Saver()
 
-            softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[-1])
+            proj_layer = tf.nn.bias_add(tf.reshape(
+                tf.matmul(proj_weight, tf.reshape(word_embed_init, shape=[cfg.word_embedding_size, -1])),
+                shape=[-1, word_dictionary_size]
+            ), proj_bias)
+            # [cfg.batch_size, word_dictionary_size]
+            print("proj_layer shape is %s" % proj_layer.get_shape())
+
+            softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[cfg.batch_size, -1])
             print("softmax_layer shape is %s" % softmax_layer.get_shape())
-            index_tensor = tf.reshape(tf.concat([tf.reshape(self.target, shape=[-1, 1]), self.pred_label], axis=1), shape=[-1])
-            print("index_tensor shape is %s" % index_tensor.get_shape())
-            index_score = tf.reshape(tf.nn.embedding_lookup(softmax_layer, index_tensor), shape=[cfg.batch_size, -1])
+            index_score = tf.reshape(tf.gather_nd(softmax_layer, self.validation_indices), shape=[cfg.batch_size, -1])
             print("index_score shape is %s" % index_score.get_shape())
             predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
-            comparison = tf.equal(predict_result, np.ones(cfg.batch_size))
+            comparison = tf.equal(predict_result, np.zeros(cfg.batch_size))
             print("comparison shape is %s" % comparison.get_shape())
             self.accuracy = tf.reduce_mean(tf.cast(comparison, dtype=tf.float32))
 
@@ -122,11 +121,11 @@ class SkipGramModel():
             self.word: word1,
             self.target: word2})
 
-    def validate(self, word1, word2, pred_label):
+    def validate(self, word1, word2, validation_indices):
         return self.sess.run(self.accuracy, feed_dict={
             self.word: word1,
             self.target: word2,
-            self.pred_label: pred_label
+            self.validation_indices: validation_indices
         })
 
     def get_loss_summary(self, epoch_loss):
@@ -149,13 +148,19 @@ if __name__ == '__main__':
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
     train_set_size_fake = int(total_batch_size * 1)
 
-    labels = np.zeros(shape=[word1_list.shape[0], cfg.negative_sample_size])
+    labels = np.zeros(shape=[word1_list.shape[0] * (cfg.negative_sample_size + 1), 2])
+    outer_accu = 0
     for index, word in enumerate(word1_list):
-        accu = 0
+        labels[outer_accu][0] = index
+        labels[outer_accu][1] = word1_list[index]
+        outer_accu += 1
+        accu = 1
         while accu < cfg.negative_sample_size:
             r = random.randint(1, word_dictionary_size)
             if r not in related_dict[word]:
-                labels[index][accu] = r
+                labels[outer_accu][0] = index
+                labels[outer_accu][1] = r
+                outer_accu += 1
                 accu += 1
 
     print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d' %
@@ -186,7 +191,8 @@ if __name__ == '__main__':
             for j in range(total_batch_size - train_set_size):
                 iter_accuracy = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      word2_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     labels[j * cfg.batch_size:(j+1) * cfg.batch_size])
+                                                     labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):
+                                                            (j+1) * cfg.batch_size] * (cfg.negative_sample_size + 1))
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

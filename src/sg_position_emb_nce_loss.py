@@ -55,7 +55,7 @@ class PositionEmbModel():
         self.word = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.position = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
-        self.validation_indices = tf.placeholder(shape=[cfg.batch_size * (cfg.negative_sample_size + 1), 2], dtype=tf.int32)
+        self.validation_index = tf.placeholder(shape=[cfg.batch_size, cfg.negative_sample_size + 1], dtype=tf.int32)
         self.validation_target = tf.placeholder(shape=[cfg.batch_size], dtype=tf.int32)
         self.sess = sess
         self.output_file = output_file
@@ -116,8 +116,13 @@ class PositionEmbModel():
             # combine positive sample(target) with negative samples(neg_label)
             softmax_layer = tf.reshape(tf.nn.softmax(logits=proj_layer), shape=[cfg.batch_size,-1])
             print("softmax_layer shape is %s" % softmax_layer.get_shape())
-            self.index_score = tf.reshape(tf.gather(softmax_layer, self.validation_indices), shape=[cfg.batch_size, -1])
-            #self.index_score_2 = tf.reshape(tf.gather_nd(softmax_layer, sub_new_labels), shape=[cfg.batch_size, -1])
+            softmax_layer_list = tf.split(softmax_layer, cfg.batch_size)
+            validation_index_list = tf.split(self.validation_index, cfg.batch_size)
+            embed_list = []
+            for layer_index, layer in enumerate(softmax_layer_list):
+                emb_result = tf.squeeze(tf.nn.embedding_lookup(tf.reshape(layer, shape=[-1,1]), validation_index_list[layer_index]))
+                embed_list.append(emb_result)
+            self.index_score = tf.convert_to_tensor(embed_list)
             print("index_score shape is %s" % self.index_score.get_shape())
             predict_result = tf.cast(tf.argmax(self.index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
@@ -142,11 +147,11 @@ class PositionEmbModel():
             self.target: word2,
             self.position: position})
 
-    def validate(self, word1, position, validation_indices, validation_target):
+    def validate(self, word1, position, validation_index, validation_target):
         return self.sess.run([self.accuracy, self.index_score], feed_dict={
             self.word: word1,
             self.position: position,
-            self.validation_indices: validation_indices,
+            self.validation_index: validation_index,
             self.validation_target: validation_target
         })
 
@@ -170,25 +175,8 @@ if __name__ == '__main__':
     train_set_size = int(total_batch_size * cfg.train_set_ratio)
     train_set_size_fake = int(total_batch_size * 1)
 
-    '''
-    labels = np.zeros(shape=[word1_list.shape[0] * (cfg.negative_sample_size + 1), 2])
-    outer_accu = 0
-    for index, word in enumerate(word1_list):
-        labels[outer_accu][0] = index
-        labels[outer_accu][1] = word1_list[index]
-        outer_accu += 1
-        accu = 1
-        while accu < cfg.negative_sample_size:
-            r = random.randint(1, word_dictionary_size)
-            if r not in related_dict[word]:
-                labels[outer_accu][0] = index
-                labels[outer_accu][1] = r
-                outer_accu += 1
-                accu += 1
-    '''
-
     new_target = np.zeros(shape=[word2_list.shape[0]])
-    new_labels = np.zeros(shape=[word2_list.shape[0] * (cfg.negative_sample_size + 1), 2])
+    new_labels = np.zeros(shape=[word2_list.shape[0], cfg.negative_sample_size + 1])
     outer_accu = 0
     for index, word in enumerate(word2_list):
         sub_labels = np.zeros(shape=[cfg.negative_sample_size + 1])
@@ -200,14 +188,12 @@ if __name__ == '__main__':
             if r not in related_dict[word]:
                 sub_labels[iter] = r
                 iter += 1
-        np.random.shuffle(sub_labels)
+        np.random.shuffle(sub_labels)    # shuffle positive and negative samples
+        new_labels[index] = sub_labels
         for sub_index, elem in enumerate(sub_labels):
-            new_labels[outer_accu][0] = index
-            new_labels[outer_accu][1] = elem
-            outer_accu += 1
             if elem == word2_list[index]:
                 new_target[index] = sub_index
-    new_labels.astype(np.int32)
+                break
 
     print('total_batch_size is %d, train_set_size is %d, word_dictionary_size is %d, new_labels size is %d,'
           'word1_list size is %d, new_target size is %d' %
@@ -238,13 +224,10 @@ if __name__ == '__main__':
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
                 j += train_set_size
-                sub_new_labels = new_labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):
-                                                            (j+1) * cfg.batch_size * (cfg.negative_sample_size + 1)]
                 iter_accuracy, index_score = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     sub_new_labels,
+                                                     new_labels[j * cfg.batch_size:(j + 1) * cfg.batch_size],
                                                      new_target[j * cfg.batch_size:(j+1) * cfg.batch_size])
-                print(index_score)
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

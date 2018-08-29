@@ -141,7 +141,7 @@ class PositionEmbModel():
             self.position: position})
 
     def validate(self, word1, word2, position, validation_indices, validation_target):
-        return self.sess.run([self.accuracy, self.total_max], feed_dict={
+        return self.sess.run([self.accuracy], feed_dict={
             self.word: word1,
             self.target: word2,
             self.position: position,
@@ -235,7 +235,7 @@ if __name__ == '__main__':
 
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
-                iter_accuracy, total_max = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
+                iter_accuracy = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      word2_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
                                                      new_labels[j * cfg.batch_size * (cfg.negative_sample_size + 1):

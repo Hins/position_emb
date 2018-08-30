@@ -22,14 +22,17 @@ if __name__ == "__main__":
     word_dict = {}
     with open(sys.argv[3], 'r') as f:
         for line in f:
-            word_dict[len(word_dict)] = line.strip('\r\n')
+            elements = line.strip('\r\n').split("\t")
+            word_dict[int(elements[1])] = elements[0]
         f.close()
+    print("word_dict len is %d" % len(word_dict))
 
     word_emb_dict = {}
     with open(sys.argv[2], 'r') as f:
         for index, line in enumerate(f):
-            word_emb_dict[word_dict[index]] = [float(item) for item in line.strip('\r\n').split(',')]
+            word_emb_dict[word_dict[index + 1]] = [float(item) for item in line.strip('\r\n').split(',')]
         f.close()
+    print("word_emb_dict len is %d" % len(word_emb_dict))
 
     with open(sys.argv[4], 'w') as o_f:
         with open(sys.argv[1], 'r') as f:
@@ -43,6 +46,8 @@ if __name__ == "__main__":
                 word4 = elements[1].split('_')[1]
                 if word1 in word_emb_dict and word2 in word_emb_dict and word3 in word_emb_dict and word4 in word_emb_dict:
                     counter += 1
+                else:
+                    continue
                 if cosSimilar(word_emb_dict[word1], word_emb_dict[word2]) > cosSimilar(word_emb_dict[word3], word_emb_dict[word4]):
                     correct_counter += 1
             f.close()

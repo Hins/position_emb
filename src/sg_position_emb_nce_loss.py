@@ -159,12 +159,15 @@ class PositionEmbModel():
     def get_accuracy_summary(self, epoch_accuracy):
         return self.sess.run(self.accuracy_summary, feed_dict={self.average_accuracy: epoch_accuracy})
 
+    def get_word_emb(self):
+        return self.sess.run(self.word_embed_weight, feed_dict={})
+
     def save(self):
         self.model.save(sess, self.output_file)
 
 if __name__ == '__main__':
-    if len(sys.argv) < 5:
-        print("position_emb <input file> <dict file> <related file> <output model>")
+    if len(sys.argv) < 6:
+        print("position_emb <input file> <dict file> <related file> <output model> <word emb model>")
         sys.exit()
 
     load_sample(sys.argv[1], sys.argv[2], sys.argv[3])
@@ -230,5 +233,14 @@ if __name__ == '__main__':
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))
             test_writer.add_summary(test_accuracy, epoch_index + 1)
+
+        embed_weight = PosModelObj.get_word_emb()
+        output_embed_file = open(sys.argv[5], 'w')
+        for embed_item in embed_weight:
+            embed_list = list(embed_item)
+            embed_list = [str(item) for item in embed_list]
+            output_embed_file.write(','.join(embed_list) + '\n')
+        output_embed_file.close()
+
         PosModelObj.save()
         sess.close()

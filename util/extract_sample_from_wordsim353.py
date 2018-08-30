@@ -23,8 +23,8 @@ if __name__ == "__main__":
             i_f.close()
 
         dedup_dict = {}
-        for k,v in dedup_dict.items():
-            for k2,v2 in dedup_dict.items():
+        for k,v in pair_dict.items():
+            for k2,v2 in pair_dict.items():
                 if k == k2 or v == v2 or k + "-" + k2 in dedup_dict or k2 + "-" + k in dedup_dict:
                     continue
                 dedup_dict[k+"-"+k2] = 1

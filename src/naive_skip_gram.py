@@ -64,7 +64,7 @@ class SkipGramModel():
                     dtype='float32'
                 )
 
-            # [cfg.batch_size, 1, cfg.word_embedding_size]
+            # [cfg.batch_size, cfg.word_embedding_size]
             word_embed_init = tf.nn.embedding_lookup(self.word_embed_weight, self.word)
             print('word_embed_init shape is %s' % word_embed_init.get_shape())
 
@@ -106,9 +106,9 @@ class SkipGramModel():
                 emb_result = tf.squeeze(
                     tf.nn.embedding_lookup(tf.reshape(layer, shape=[-1, 1]), validation_index_list[layer_index]))
                 embed_list.append(emb_result)
-            self.index_score = tf.convert_to_tensor(embed_list)
-            print("index_score shape is %s" % self.index_score.get_shape())
-            predict_result = tf.cast(tf.argmax(self.index_score, axis=1), dtype=tf.int32)
+            index_score = tf.convert_to_tensor(embed_list)
+            print("index_score shape is %s" % index_score.get_shape())
+            predict_result = tf.cast(tf.argmax(index_score, axis=1), dtype=tf.int32)
             print("predict_result shape is %s" % predict_result.get_shape())
             comparison = tf.equal(predict_result, self.validation_target)
             print("comparison shape is %s" % comparison.get_shape())
@@ -206,9 +206,9 @@ if __name__ == '__main__':
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
                 j += train_set_size
-                iter_accuracy = SkipGramObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     labels[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     targets[j * cfg.batch_size:(j+1) * cfg.batch_size])
+                iter_accuracy = SkipGramObj.validate(word1_list[j*cfg.batch_size : (j+1)*cfg.batch_size],
+                                                     labels[j*cfg.batch_size : (j+1)*cfg.batch_size],
+                                                     targets[j*cfg.batch_size : (j+1)*cfg.batch_size])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = SkipGramObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))

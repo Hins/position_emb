@@ -225,10 +225,10 @@ if __name__ == '__main__':
             accuracy = 0.0
             for j in range(total_batch_size - train_set_size):
                 j += train_set_size
-                iter_accuracy, index_score = PosModelObj.validate(word1_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     position_list[j * cfg.batch_size:(j+1) * cfg.batch_size],
-                                                     labels[j * cfg.batch_size:(j + 1) * cfg.batch_size],
-                                                     targets[j * cfg.batch_size:(j+1) * cfg.batch_size])
+                iter_accuracy, index_score = PosModelObj.validate(word1_list[j*cfg.batch_size : (j+1)*cfg.batch_size],
+                                                     position_list[j*cfg.batch_size : (j+1) * cfg.batch_size],
+                                                     labels[j*cfg.batch_size : (j+1)*cfg.batch_size],
+                                                     targets[j*cfg.batch_size : (j+1)*cfg.batch_size])
                 accuracy += iter_accuracy
             print("iter %d : accuracy %f" % (epoch_index, accuracy / (total_batch_size - train_set_size)))
             test_accuracy = PosModelObj.get_accuracy_summary(accuracy / (total_batch_size - train_set_size))
